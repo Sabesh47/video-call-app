@@ -2,6 +2,7 @@ import streamlit as st
 import random
 import string
 
+# Page config
 st.set_page_config(
     page_title="Video Call App",
     page_icon="📹",
@@ -9,12 +10,10 @@ st.set_page_config(
 )
 
 def generate_room_code():
+    """Generate a simple 4-character room code"""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
 
-# ⚠️ IMPORTANT: Replace this URL after deploying the signaling server!
-# It will look like: wss://your-app-name.onrender.com
-SIGNALING_SERVER = "wss://signaling-server-2g74.onrender.com"
-
+# Initialize session state
 if 'room_code' not in st.session_state:
     st.session_state.room_code = ''
 if 'in_call' not in st.session_state:
@@ -22,22 +21,27 @@ if 'in_call' not in st.session_state:
 if 'is_host' not in st.session_state:
     st.session_state.is_host = False
 
+# IMPORTANT: Replace this with your deployed signaling server URL
+SIGNALING_SERVER = "wss://signaling-server-2g74.onrender.com"
+
 def main():
     st.title("📹 Real-Time Video Call")
     
-    with st.expander("ℹ️ How to Use"):
+    # Instructions
+    with st.expander("ℹ️ Setup Instructions"):
         st.markdown("""
-        1. **Host**: Click "Start Video Call" to create a room
-        2. **Guest**: Enter the room code and click "Join Call"
-        3. Click "Start Camera" to enable video/audio
-        4. Share your room code with others!
+        **To use this app across devices:**
+        1. Deploy the signaling server (see `signaling_server.py`)
+        2. Update `SIGNALING_SERVER` variable with your server URL
+        3. Share your Streamlit app URL with others
         
-        **Signaling Server Status:** `{}`
+        **Current signaling server:** `{}`
         """.format(SIGNALING_SERVER))
     
     st.markdown("---")
     
     if not st.session_state.in_call:
+        # Main menu
         col1, col2 = st.columns(2)
         
         with col1:
@@ -60,12 +64,13 @@ def main():
                         st.session_state.is_host = False
                         st.rerun()
     else:
+        # Video call interface
         role = "Host" if st.session_state.is_host else "Guest"
         st.success(f"✅ **Room: {st.session_state.room_code}** | You are the {role}")
         
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.info(f"💡 Share this room code: **{st.session_state.room_code}**")
+            st.info("💡 Share this room code with others to join: **{}**".format(st.session_state.room_code))
         with col2:
             if st.button("❌ Leave Call", type="primary", use_container_width=True):
                 st.session_state.in_call = False
@@ -75,11 +80,13 @@ def main():
         
         st.markdown("---")
         
+        # Real-time video call interface
         st.components.v1.html(f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
+    <title>Video Call</title>
     <style>
         body {{
             margin: 0;
@@ -87,6 +94,7 @@ def main():
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            overflow-x: hidden;
         }}
         .video-container {{
             display: flex;
@@ -103,6 +111,7 @@ def main():
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             border: 2px solid rgba(255,255,255,0.1);
+            width: 100%;
         }}
         .video-box video {{
             width: 100%;
@@ -120,6 +129,7 @@ def main():
             border-radius: 15px;
             font-size: 12px;
             font-weight: 600;
+            backdrop-filter: blur(10px);
         }}
         .status {{
             position: absolute;
@@ -130,6 +140,7 @@ def main():
             padding: 4px 10px;
             border-radius: 10px;
             font-size: 11px;
+            font-weight: 600;
         }}
         .controls {{
             text-align: center;
@@ -201,6 +212,9 @@ def main():
             iceServers: [
                 {{ urls: 'stun:stun.l.google.com:19302' }},
                 {{ urls: 'stun:stun1.l.google.com:19302' }},
+                {{ urls: 'stun:stun2.l.google.com:19302' }},
+                {{ urls: 'stun:stun3.l.google.com:19302' }},
+                {{ urls: 'stun:stun4.l.google.com:19302' }},
                 {{
                     urls: 'turn:openrelay.metered.ca:80',
                     username: 'openrelayproject',
@@ -210,10 +224,17 @@ def main():
                     urls: 'turn:openrelay.metered.ca:443',
                     username: 'openrelayproject',
                     credential: 'openrelayproject'
+                }},
+                {{
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
                 }}
-            ]
+            ],
+            iceCandidatePoolSize: 10
         }};
 
+        // Connect to signaling server
         function connectSignaling() {{
             const signalingServer = '{SIGNALING_SERVER}';
             ws = new WebSocket(signalingServer);
@@ -223,6 +244,7 @@ def main():
                 document.getElementById('connectionStatus').textContent = '✅ Connected to server';
                 document.getElementById('connectionStatus').style.color = '#4ade80';
                 
+                // Join room
                 ws.send(JSON.stringify({{
                     type: 'join',
                     room: roomCode,
@@ -232,14 +254,14 @@ def main():
             
             ws.onerror = function(error) {{
                 console.error('WebSocket error:', error);
-                document.getElementById('connectionStatus').textContent = '❌ Connection error';
+                document.getElementById('connectionStatus').textContent = '❌ Connection error - check signaling server';
                 document.getElementById('connectionStatus').style.color = '#ef4444';
             }};
             
             ws.onclose = function() {{
-                document.getElementById('connectionStatus').textContent = '⚠️ Disconnected';
+                document.getElementById('connectionStatus').textContent = '⚠️ Disconnected from server';
                 document.getElementById('connectionStatus').style.color = '#f59e0b';
-                setTimeout(connectSignaling, 3000);
+                setTimeout(connectSignaling, 3000); // Reconnect after 3s
             }};
             
             ws.onmessage = async function(event) {{
@@ -249,7 +271,7 @@ def main():
         }}
 
         async function handleSignalingMessage(message) {{
-            console.log('Received:', message.type);
+            console.log('Received message:', message.type);
             
             switch (message.type) {{
                 case 'ready':
@@ -289,7 +311,11 @@ def main():
         async function startCall() {{
             try {{
                 localStream = await navigator.mediaDevices.getUserMedia({{
-                    video: {{ width: 1280, height: 720 }},
+                    video: {{ 
+                        width: {{ ideal: 640 }}, 
+                        height: {{ ideal: 480 }},
+                        frameRate: {{ ideal: 15, max: 20 }}
+                    }},
                     audio: {{
                         echoCancellation: true,
                         noiseSuppression: true,
@@ -306,17 +332,29 @@ def main():
                 await initWebRTC();
             }} catch (err) {{
                 console.error('Media error:', err);
-                alert('Could not access camera/microphone');
+                alert('Could not access camera/microphone. Please check permissions.');
             }}
         }}
 
         async function initWebRTC() {{
             peerConnection = new RTCPeerConnection(configuration);
 
+            // Add local tracks with bitrate limits
             localStream.getTracks().forEach(track => {{
-                peerConnection.addTrack(track, localStream);
+                const sender = peerConnection.addTrack(track, localStream);
+                
+                // Limit video bitrate to improve performance
+                if (track.kind === 'video') {{
+                    const parameters = sender.getParameters();
+                    if (!parameters.encodings) {{
+                        parameters.encodings = [{{}}];
+                    }}
+                    parameters.encodings[0].maxBitrate = 500000; // 500 kbps
+                    sender.setParameters(parameters);
+                }}
             }});
 
+            // Handle remote stream
             peerConnection.ontrack = function(event) {{
                 if (!remoteVideo.srcObject) {{
                     remoteVideo.srcObject = event.streams[0];
@@ -343,6 +381,7 @@ def main():
                 }}
             }};
 
+            // Notify that we're ready
             if (ws && ws.readyState === WebSocket.OPEN) {{
                 ws.send(JSON.stringify({{
                     type: 'ready',
@@ -388,6 +427,7 @@ def main():
             }}
         }}
 
+        // Initialize
         connectSignaling();
     </script>
 </body>
