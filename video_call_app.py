@@ -598,24 +598,67 @@ def main():
                 return;
             }}
             
-            try {{
-                // Toggle between front and back camera using facingMode
-                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-                console.log(`Switching to ${{currentFacingMode}} camera`);
-                
-                // Store old video track
-                const oldVideoTrack = localStream.getVideoTracks()[0];
-                
-                // Get new video with opposite facing mode
-                const newVideoStream = await navigator.mediaDevices.getUserMedia({{
+            // Toggle between front and back camera
+            const targetFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            console.log(`Attempting to switch to ${{targetFacingMode}} camera`);
+            
+            // Store old video track
+            const oldVideoTrack = localStream.getVideoTracks()[0];
+            
+            // Try three strategies in order
+            const strategies = [
+                // Strategy 1: Exact facingMode (most reliable on modern devices)
+                {{
                     video: {{ 
-                        facingMode: {{ exact: currentFacingMode }},
+                        facingMode: {{ exact: targetFacingMode }},
                         width: {{ ideal: 1280 }}, 
                         height: {{ ideal: 720 }}
                     }},
                     audio: false
-                }});
-                
+                }},
+                // Strategy 2: Non-exact facingMode (fallback for some devices)
+                {{
+                    video: {{ 
+                        facingMode: targetFacingMode,
+                        width: {{ ideal: 1280 }}, 
+                        height: {{ ideal: 720 }}
+                    }},
+                    audio: false
+                }},
+                // Strategy 3: Just facingMode, no resolution constraints
+                {{
+                    video: {{ 
+                        facingMode: targetFacingMode
+                    }},
+                    audio: false
+                }}
+            ];
+            
+            let newVideoStream = null;
+            let lastError = null;
+            
+            // Try each strategy until one works
+            for (let i = 0; i < strategies.length; i++) {{
+                try {{
+                    console.log(`Trying strategy ${{i + 1}}...`);
+                    newVideoStream = await navigator.mediaDevices.getUserMedia(strategies[i]);
+                    console.log(`Strategy ${{i + 1}} succeeded!`);
+                    break; // Success! Exit loop
+                }} catch (err) {{
+                    console.warn(`Strategy ${{i + 1}} failed:`, err.message);
+                    lastError = err;
+                    // Continue to next strategy
+                }}
+            }}
+            
+            // If all strategies failed
+            if (!newVideoStream) {{
+                console.error('All flip strategies failed:', lastError);
+                alert(`Could not switch to ${{targetFacingMode === 'user' ? 'front' : 'back'}} camera. Your device may not have both cameras.`);
+                return;
+            }}
+            
+            try {{
                 // Get the new video track
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
                 
@@ -643,12 +686,13 @@ def main():
                 // Update local video display
                 localVideo.srcObject = localStream;
                 
+                // Update current facing mode
+                currentFacingMode = targetFacingMode;
+                
                 console.log('Camera switched successfully to:', currentFacingMode);
             }} catch (err) {{
-                console.error('Error flipping camera:', err);
-                // Revert facing mode on error
-                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-                alert(`Could not switch to ${{currentFacingMode === 'user' ? 'back' : 'front'}} camera. Your device may not have both cameras.`);
+                console.error('Error replacing video track:', err);
+                alert(`Error switching camera: ${{err.message}}`);
             }}
         }}
 
