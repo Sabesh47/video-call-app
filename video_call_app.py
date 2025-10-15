@@ -442,9 +442,12 @@ def main():
 
         async function startCall() {{
             try {{
+                // Get list of available cameras first
+                await getAvailableCameras();
+                
                 localStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        facingMode: currentCamera,
+                        deviceId: availableCameras.length > 0 ? {{ exact: availableCameras[currentCameraIndex] }} : undefined,
                         width: {{ ideal: 1280, max: 1920 }}, 
                         height: {{ ideal: 720, max: 1080 }},
                         frameRate: {{ ideal: 30, max: 30 }},
@@ -463,7 +466,14 @@ def main():
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('muteBtn').disabled = false;
                 document.getElementById('videoBtn').disabled = false;
-                document.getElementById('flipBtn').disabled = false;
+                
+                // Only enable flip button if multiple cameras available
+                if (availableCameras.length > 1) {{
+                    document.getElementById('flipBtn').disabled = false;
+                }} else {{
+                    document.getElementById('flipBtn').title = 'Only one camera detected';
+                }}
+                
                 if (isAgent) {{
                     document.getElementById('captureBtn').disabled = false;
                 }}
@@ -578,39 +588,71 @@ def main():
         }}
 
         async function flipCamera() {{
-            if (!localStream) return;
+            if (!localStream || availableCameras.length <= 1) {{
+                alert('Multiple cameras not detected on your device.');
+                return;
+            }}
             
-            currentCamera = currentCamera === 'user' ? 'environment' : 'user';
+            // Switch to next camera
+            currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+            console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
             
             try {{
                 const newStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        facingMode: currentCamera,
+                        deviceId: {{ exact: availableCameras[currentCameraIndex] }},
                         width: {{ ideal: 1280, max: 1920 }}, 
                         height: {{ ideal: 720, max: 1080 }},
                         frameRate: {{ ideal: 30, max: 30 }},
                         aspectRatio: 16/9
                     }},
-                    audio: true
+                    audio: {{
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000,
+                        channelCount: 1
+                    }}
                 }});
                 
-                // Replace video track
+                // Replace video track in peer connection
                 const videoTrack = newStream.getVideoTracks()[0];
-                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                if (sender) {{
-                    sender.replaceTrack(videoTrack);
+                const audioTrack = newStream.getAudioTracks()[0];
+                
+                const senders = peerConnection.getSenders();
+                
+                // Replace video track
+                const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                if (videoSender) {{
+                    await videoSender.replaceTrack(videoTrack);
+                    
+                    // Reapply encoding parameters
+                    const parameters = videoSender.getParameters();
+                    if (parameters.encodings && parameters.encodings.length > 0) {{
+                        parameters.encodings[0].maxBitrate = 2500000;
+                        parameters.encodings[0].maxFramerate = 30;
+                        parameters.encodings[0].scaleResolutionDownBy = 1.0;
+                        await videoSender.setParameters(parameters);
+                    }}
                 }}
                 
-                // Stop old track
-                localStream.getVideoTracks()[0].stop();
+                // Replace audio track
+                const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+                if (audioSender) {{
+                    await audioSender.replaceTrack(audioTrack);
+                }}
+                
+                // Stop old tracks
+                localStream.getTracks().forEach(track => track.stop());
                 
                 // Update local stream
-                localStream.removeTrack(localStream.getVideoTracks()[0]);
-                localStream.addTrack(videoTrack);
+                localStream = newStream;
                 localVideo.srcObject = localStream;
+                
+                console.log('Camera switched successfully');
             }} catch (err) {{
                 console.error('Error flipping camera:', err);
-                alert('Could not flip camera. This feature may not be available on your device.');
+                alert(`Could not switch camera: ${{err.message}}`);
             }}
         }}
 
@@ -666,6 +708,36 @@ def main():
             document.getElementById('overlay').classList.remove('show');
             document.getElementById('snapshotPreview').classList.remove('show');
             capturedSnapshot = null;
+        }}
+
+        // Get all available cameras
+        async function getAvailableCameras() {{
+            try {{
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableCameras = devices
+                    .filter(device => device.kind === 'videoinput')
+                    .map(device => device.deviceId);
+                
+                console.log(`Found ${{availableCameras.length}} camera(s):`, devices.filter(d => d.kind === 'videoinput').map(d => d.label || 'Camera'));
+                
+                // Try to identify front/back cameras
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                videoDevices.forEach((device, index) => {{
+                    const label = device.label.toLowerCase();
+                    if (label.includes('front') || label.includes('user')) {{
+                        console.log(`Camera ${{index + 1}}: Front camera`);
+                    }} else if (label.includes('back') || label.includes('rear') || label.includes('environment')) {{
+                        console.log(`Camera ${{index + 1}}: Back camera`);
+                    }} else {{
+                        console.log(`Camera ${{index + 1}}: ${{device.label || 'Unknown'}}`);
+                    }}
+                }});
+                
+                return availableCameras;
+            }} catch (err) {{
+                console.error('Error enumerating devices:', err);
+                return [];
+            }}
         }}
 
         // Monitor and adjust video quality based on network conditions
