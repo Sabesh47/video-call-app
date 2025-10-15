@@ -444,20 +444,17 @@ def main():
 
         async function startCall() {{
             try {{
-                // First, get initial camera access with basic permissions
+                // Get initial camera access with any available camera
                 localStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        width: {{ ideal: 1280, max: 1920 }}, 
-                        height: {{ ideal: 720, max: 1080 }},
-                        frameRate: {{ ideal: 30, max: 30 }},
-                        aspectRatio: 16/9
+                        width: {{ ideal: 1280 }}, 
+                        height: {{ ideal: 720 }},
+                        frameRate: {{ ideal: 30 }}
                     }},
                     audio: {{
                         echoCancellation: true,
                         noiseSuppression: true,
-                        autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1
+                        autoGainControl: true
                     }}
                 }});
                 
@@ -466,8 +463,16 @@ def main():
                 document.getElementById('muteBtn').disabled = false;
                 document.getElementById('videoBtn').disabled = false;
                 
-                // Now enumerate cameras after getting permission
+                // NOW enumerate cameras after getting permission
                 await getAvailableCameras();
+                
+                // Find which camera is currently being used
+                const currentTrack = localStream.getVideoTracks()[0];
+                const currentDeviceId = currentTrack.getSettings().deviceId;
+                currentCameraIndex = availableCameras.indexOf(currentDeviceId);
+                if (currentCameraIndex === -1) currentCameraIndex = 0;
+                
+                console.log(`Currently using camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
                 
                 // Enable flip button if multiple cameras available
                 if (availableCameras.length > 1) {{
@@ -598,23 +603,22 @@ def main():
                 return;
             }}
             
-            // Switch to next camera
-            currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
-            console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
-            
             try {{
+                // Switch to next camera
+                currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+                console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
+                
                 // Store old video track
                 const oldVideoTrack = localStream.getVideoTracks()[0];
                 
-                // Get only video from the new camera with more flexible constraints
+                // Get only video from the new camera
                 const newVideoStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        deviceId: availableCameras[currentCameraIndex],  // Use non-exact constraint
+                        deviceId: {{ exact: availableCameras[currentCameraIndex] }},
                         width: {{ ideal: 1280 }}, 
                         height: {{ ideal: 720 }},
                         frameRate: {{ ideal: 30 }}
-                    }},
-                    audio: false
+                    }}
                 }});
                 
                 // Get the new video track
@@ -626,19 +630,6 @@ def main():
                 
                 if (videoSender) {{
                     await videoSender.replaceTrack(newVideoTrack);
-                    
-                    // Reapply encoding parameters
-                    const parameters = videoSender.getParameters();
-                    if (parameters.encodings && parameters.encodings.length > 0) {{
-                        parameters.encodings[0].maxBitrate = 2500000;
-                        parameters.encodings[0].maxFramerate = 30;
-                        parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                        try {{
-                            await videoSender.setParameters(parameters);
-                        }} catch (e) {{
-                            console.warn('Could not set parameters:', e);
-                        }}
-                    }}
                 }}
                 
                 // Stop old video track
@@ -655,11 +646,11 @@ def main():
                 // Update local video display
                 localVideo.srcObject = localStream;
                 
-                console.log('Camera switched successfully');
+                console.log('Camera switched successfully to:', newVideoTrack.label);
             }} catch (err) {{
                 console.error('Error flipping camera:', err);
-                alert(`Could not switch camera: ${{err.message}}. Try allowing camera permissions.`);
-                // Revert to previous camera index
+                alert(`Could not switch camera: ${{err.message}}`);
+                // Revert camera index on error
                 currentCameraIndex = (currentCameraIndex - 1 + availableCameras.length) % availableCameras.length;
             }}
         }}
