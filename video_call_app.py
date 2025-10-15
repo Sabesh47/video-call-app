@@ -611,25 +611,27 @@ def main():
                 // Store old video track
                 const oldVideoTrack = localStream.getVideoTracks()[0];
                 
-                // Get only video from the new camera
-                const newVideoStream = await navigator.mediaDevices.getUserMedia({{
-                    video: {{ 
-                        deviceId: {{ exact: availableCameras[currentCameraIndex] }},
-                        width: {{ ideal: 1280 }}, 
-                        height: {{ ideal: 720 }},
-                        frameRate: {{ ideal: 30 }}
-                    }}
-                }});
+                // Get only video from the new camera - use facingMode for mobile
+                const constraints = {{
+                    video: {{
+                        deviceId: availableCameras[currentCameraIndex]
+                    }},
+                    audio: false
+                }};
+                
+                const newVideoStream = await navigator.mediaDevices.getUserMedia(constraints);
                 
                 // Get the new video track
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
                 
-                // Replace video track in peer connection
-                const senders = peerConnection.getSenders();
-                const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-                
-                if (videoSender) {{
-                    await videoSender.replaceTrack(newVideoTrack);
+                // Replace video track in peer connection if it exists
+                if (peerConnection) {{
+                    const senders = peerConnection.getSenders();
+                    const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                    
+                    if (videoSender) {{
+                        await videoSender.replaceTrack(newVideoTrack);
+                    }}
                 }}
                 
                 // Stop old video track
