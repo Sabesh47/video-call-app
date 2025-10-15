@@ -604,8 +604,9 @@ def main():
             
             // Store old video track
             const oldVideoTrack = localStream.getVideoTracks()[0];
+            const currentDeviceId = oldVideoTrack.getSettings().deviceId;
             
-            // Try three strategies in order
+            // Try multiple strategies in order
             const strategies = [
                 // Strategy 1: Exact facingMode (most reliable on modern devices)
                 {{
@@ -634,14 +635,36 @@ def main():
                 }}
             ];
             
+            // Strategy 4: Try cycling through available device IDs
+            if (availableCameras.length > 1) {{
+                for (let deviceId of availableCameras) {{
+                    if (deviceId !== currentDeviceId) {{
+                        strategies.push({{
+                            video: {{ deviceId: deviceId }},
+                            audio: false
+                        }});
+                    }}
+                }}
+            }}
+            
             let newVideoStream = null;
             let lastError = null;
             
             // Try each strategy until one works
             for (let i = 0; i < strategies.length; i++) {{
                 try {{
-                    console.log(`Trying strategy ${{i + 1}}...`);
+                    console.log(`Trying strategy ${{i + 1}}/${{strategies.length}}...`);
                     newVideoStream = await navigator.mediaDevices.getUserMedia(strategies[i]);
+                    
+                    // Verify we actually got a different camera
+                    const newDeviceId = newVideoStream.getVideoTracks()[0].getSettings().deviceId;
+                    if (newDeviceId === currentDeviceId) {{
+                        console.warn(`Strategy ${{i + 1}} returned same camera, trying next...`);
+                        newVideoStream.getTracks().forEach(track => track.stop());
+                        newVideoStream = null;
+                        continue;
+                    }}
+                    
                     console.log(`Strategy ${{i + 1}} succeeded!`);
                     break; // Success! Exit loop
                 }} catch (err) {{
@@ -654,13 +677,17 @@ def main():
             // If all strategies failed
             if (!newVideoStream) {{
                 console.error('All flip strategies failed:', lastError);
-                alert(`Could not switch to ${{targetFacingMode === 'user' ? 'front' : 'back'}} camera. Your device may not have both cameras.`);
+                console.log('Available cameras:', availableCameras.length);
+                console.log('Current device ID:', currentDeviceId);
+                alert(`Could not switch camera. This may be a browser limitation on your device. Try using Chrome or Safari.`);
                 return;
             }}
             
             try {{
                 // Get the new video track
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
+                
+                console.log('Switched from:', oldVideoTrack.label, 'to:', newVideoTrack.label);
                 
                 // Replace video track in peer connection if it exists
                 if (peerConnection) {{
@@ -692,6 +719,10 @@ def main():
                 console.log('Camera switched successfully to:', currentFacingMode);
             }} catch (err) {{
                 console.error('Error replacing video track:', err);
+                // Clean up the new stream if replacement failed
+                if (newVideoStream) {{
+                    newVideoStream.getTracks().forEach(track => track.stop());
+                }}
                 alert(`Error switching camera: ${{err.message}}`);
             }}
         }}
