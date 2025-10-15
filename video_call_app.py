@@ -327,10 +327,11 @@ def main():
         let isMuted = false;
         let isVideoOff = false;
         let isLargeView = false;
-        let currentCamera = 'user'; // 'user' or 'environment'
+        let currentFacingMode = 'user'; // 'user' for front, 'environment' for back
         let capturedSnapshot = null;
         let availableCameras = []; // Initialize the array
         let currentCameraIndex = 0; // Initialize the index
+        let useFacingMode = true; // Use facingMode for mobile devices
         
         // Persist session state
         sessionStorage.setItem('roomCode', roomCode);
@@ -474,15 +475,9 @@ def main():
                 
                 console.log(`Currently using camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
                 
-                // Enable flip button if multiple cameras available
-                if (availableCameras.length > 1) {{
-                    document.getElementById('flipBtn').disabled = false;
-                    console.log(`Flip camera enabled - ${{availableCameras.length}} cameras available`);
-                }} else {{
-                    document.getElementById('flipBtn').disabled = true;
-                    document.getElementById('flipBtn').title = 'Only one camera detected';
-                    console.log('Flip camera disabled - only 1 camera found');
-                }}
+                // Enable flip button (always enable it, let the flip function handle errors)
+                document.getElementById('flipBtn').disabled = false;
+                console.log('Flip camera enabled');
                 
                 if (isAgent) {{
                     document.getElementById('captureBtn').disabled = false;
@@ -598,28 +593,28 @@ def main():
         }}
 
         async function flipCamera() {{
-            if (!localStream || availableCameras.length <= 1) {{
-                alert('Multiple cameras not detected on your device.');
+            if (!localStream) {{
+                alert('Please start camera first.');
                 return;
             }}
             
             try {{
-                // Switch to next camera
-                currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
-                console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
+                // Toggle between front and back camera using facingMode
+                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+                console.log(`Switching to ${{currentFacingMode}} camera`);
                 
                 // Store old video track
                 const oldVideoTrack = localStream.getVideoTracks()[0];
                 
-                // Get only video from the new camera - use facingMode for mobile
-                const constraints = {{
-                    video: {{
-                        deviceId: availableCameras[currentCameraIndex]
+                // Get new video with opposite facing mode
+                const newVideoStream = await navigator.mediaDevices.getUserMedia({{
+                    video: {{ 
+                        facingMode: {{ exact: currentFacingMode }},
+                        width: {{ ideal: 1280 }}, 
+                        height: {{ ideal: 720 }}
                     }},
                     audio: false
-                }};
-                
-                const newVideoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                }});
                 
                 // Get the new video track
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
@@ -648,12 +643,12 @@ def main():
                 // Update local video display
                 localVideo.srcObject = localStream;
                 
-                console.log('Camera switched successfully to:', newVideoTrack.label);
+                console.log('Camera switched successfully to:', currentFacingMode);
             }} catch (err) {{
                 console.error('Error flipping camera:', err);
-                alert(`Could not switch camera: ${{err.message}}`);
-                // Revert camera index on error
-                currentCameraIndex = (currentCameraIndex - 1 + availableCameras.length) % availableCameras.length;
+                // Revert facing mode on error
+                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+                alert(`Could not switch to ${{currentFacingMode === 'user' ? 'back' : 'front'}} camera. Your device may not have both cameras.`);
             }}
         }}
 
