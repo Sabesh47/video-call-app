@@ -442,12 +442,9 @@ def main():
 
         async function startCall() {{
             try {{
-                // Get list of available cameras first
-                await getAvailableCameras();
-                
+                // First, get initial camera access with basic permissions
                 localStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        deviceId: availableCameras.length > 0 ? {{ exact: availableCameras[currentCameraIndex] }} : undefined,
                         width: {{ ideal: 1280, max: 1920 }}, 
                         height: {{ ideal: 720, max: 1080 }},
                         frameRate: {{ ideal: 30, max: 30 }},
@@ -467,11 +464,17 @@ def main():
                 document.getElementById('muteBtn').disabled = false;
                 document.getElementById('videoBtn').disabled = false;
                 
-                // Only enable flip button if multiple cameras available
+                // Now enumerate cameras after getting permission
+                await getAvailableCameras();
+                
+                // Enable flip button if multiple cameras available
                 if (availableCameras.length > 1) {{
                     document.getElementById('flipBtn').disabled = false;
+                    console.log(`Flip camera enabled - ${{availableCameras.length}} cameras available`);
                 }} else {{
+                    document.getElementById('flipBtn').disabled = true;
                     document.getElementById('flipBtn').title = 'Only one camera detected';
+                    console.log('Flip camera disabled - only 1 camera found');
                 }}
                 
                 if (isAgent) {{
@@ -715,22 +718,15 @@ def main():
             try {{
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 availableCameras = devices
-                    .filter(device => device.kind === 'videoinput')
+                    .filter(device => device.kind === 'videoinput' && device.deviceId)
                     .map(device => device.deviceId);
                 
-                console.log(`Found ${{availableCameras.length}} camera(s):`, devices.filter(d => d.kind === 'videoinput').map(d => d.label || 'Camera'));
+                console.log(`Found ${{availableCameras.length}} camera(s)`);
                 
-                // Try to identify front/back cameras
+                // Log camera details for debugging
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
                 videoDevices.forEach((device, index) => {{
-                    const label = device.label.toLowerCase();
-                    if (label.includes('front') || label.includes('user')) {{
-                        console.log(`Camera ${{index + 1}}: Front camera`);
-                    }} else if (label.includes('back') || label.includes('rear') || label.includes('environment')) {{
-                        console.log(`Camera ${{index + 1}}: Back camera`);
-                    }} else {{
-                        console.log(`Camera ${{index + 1}}: ${{device.label || 'Unknown'}}`);
-                    }}
+                    console.log(`  Camera ${{index + 1}}: ${{device.label || 'Camera ' + (index + 1)}}`);
                 }});
                 
                 return availableCameras;
