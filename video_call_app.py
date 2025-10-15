@@ -128,6 +128,8 @@ def main():
             height: 100%;
             object-fit: contain;
             background: #1a1a1a;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
         }}
         #localVideo {{
             position: absolute;
@@ -142,6 +144,8 @@ def main():
             cursor: pointer;
             transition: all 0.3s ease;
             z-index: 10;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
         }}
         #localVideo.large {{
             width: 100%;
@@ -354,7 +358,10 @@ def main():
                     credential: 'openrelayproject'
                 }}
             ],
-            iceCandidatePoolSize: 10
+            iceCandidatePoolSize: 10,
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require',
+            iceTransportPolicy: 'all'
         }};
 
         function connectSignaling() {{
@@ -438,15 +445,17 @@ def main():
                 localStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
                         facingMode: currentCamera,
-                        width: {{ ideal: 640 }}, 
-                        height: {{ ideal: 480 }},
-                        frameRate: {{ ideal: 24, max: 30 }}
+                        width: {{ ideal: 1280, max: 1920 }}, 
+                        height: {{ ideal: 720, max: 1080 }},
+                        frameRate: {{ ideal: 30, max: 30 }},
+                        aspectRatio: 16/9
                     }},
                     audio: {{
                         echoCancellation: true,
                         noiseSuppression: true,
                         autoGainControl: true,
-                        sampleRate: 48000
+                        sampleRate: 48000,
+                        channelCount: 1
                     }}
                 }});
                 
@@ -477,10 +486,17 @@ def main():
                     if (!parameters.encodings) {{
                         parameters.encodings = [{{}}];
                     }}
-                    // Adaptive bitrate
-                    parameters.encodings[0].maxBitrate = 800000; // 800 kbps
-                    parameters.encodings[0].scaleResolutionDownBy = 1;
-                    sender.setParameters(parameters);
+                    
+                    // High-quality encoding parameters
+                    parameters.encodings[0].maxBitrate = 2500000; // 2.5 Mbps for HD quality
+                    parameters.encodings[0].maxFramerate = 30;
+                    parameters.encodings[0].scaleResolutionDownBy = 1.0; // No downscaling
+                    parameters.encodings[0].priority = 'high';
+                    parameters.encodings[0].networkPriority = 'high';
+                    
+                    sender.setParameters(parameters).catch(err => {{
+                        console.warn('Could not set encoding parameters:', err);
+                    }});
                 }}
             }});
 
@@ -489,6 +505,9 @@ def main():
                     remoteVideo.srcObject = event.streams[0];
                     document.getElementById('connectionState').textContent = 'Connected';
                     document.getElementById('connectionState').style.color = '#4ade80';
+                    
+                    // Monitor video quality
+                    monitorVideoQuality();
                 }}
             }};
 
@@ -567,9 +586,10 @@ def main():
                 const newStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
                         facingMode: currentCamera,
-                        width: {{ ideal: 640 }}, 
-                        height: {{ ideal: 480 }},
-                        frameRate: {{ ideal: 24, max: 30 }}
+                        width: {{ ideal: 1280, max: 1920 }}, 
+                        height: {{ ideal: 720, max: 1080 }},
+                        frameRate: {{ ideal: 30, max: 30 }},
+                        aspectRatio: 16/9
                     }},
                     audio: true
                 }});
@@ -646,6 +666,69 @@ def main():
             document.getElementById('overlay').classList.remove('show');
             document.getElementById('snapshotPreview').classList.remove('show');
             capturedSnapshot = null;
+        }}
+
+        // Monitor and adjust video quality based on network conditions
+        function monitorVideoQuality() {{
+            if (!peerConnection) return;
+            
+            setInterval(async () => {{
+                if (!peerConnection) return;
+                
+                try {{
+                    const stats = await peerConnection.getStats();
+                    let inboundVideo = null;
+                    
+                    stats.forEach(report => {{
+                        if (report.type === 'inbound-rtp' && report.kind === 'video') {{
+                            inboundVideo = report;
+                        }}
+                    }});
+                    
+                    if (inboundVideo) {{
+                        const fps = inboundVideo.framesPerSecond || 0;
+                        const bytesReceived = inboundVideo.bytesReceived || 0;
+                        const packetsLost = inboundVideo.packetsLost || 0;
+                        
+                        console.log(`Video Stats - FPS: ${{fps}}, Packets Lost: ${{packetsLost}}`);
+                        
+                        // Show quality indicator
+                        if (fps < 15 || packetsLost > 50) {{
+                            document.getElementById('connectionState').textContent = 'Poor Quality';
+                            document.getElementById('connectionState').style.color = '#f59e0b';
+                        }} else if (fps >= 25) {{
+                            document.getElementById('connectionState').textContent = 'HD Quality';
+                            document.getElementById('connectionState').style.color = '#4ade80';
+                        }} else {{
+                            document.getElementById('connectionState').textContent = 'Good Quality';
+                            document.getElementById('connectionState').style.color = '#60a5fa';
+                        }}
+                    }}
+                }} catch (err) {{
+                    console.error('Error getting stats:', err);
+                }}
+            }}, 3000); // Check every 3 seconds
+        }}
+
+        // Optimize sender parameters based on network
+        async function optimizeBitrate(targetBitrate) {{
+            if (!peerConnection) return;
+            
+            const senders = peerConnection.getSenders();
+            for (const sender of senders) {{
+                if (sender.track && sender.track.kind === 'video') {{
+                    const parameters = sender.getParameters();
+                    if (parameters.encodings && parameters.encodings.length > 0) {{
+                        parameters.encodings[0].maxBitrate = targetBitrate;
+                        try {{
+                            await sender.setParameters(parameters);
+                            console.log(`Bitrate adjusted to: ${{targetBitrate}}`);
+                        }} catch (err) {{
+                            console.error('Error setting bitrate:', err);
+                        }}
+                    }}
+                }}
+            }}
         }}
 
         // Auto-reconnect on page refresh
