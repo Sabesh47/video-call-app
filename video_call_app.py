@@ -603,7 +603,8 @@ def main():
             console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
             
             try {{
-                const newStream = await navigator.mediaDevices.getUserMedia({{
+                // Get only video from the new camera
+                const newVideoStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
                         deviceId: {{ exact: availableCameras[currentCameraIndex] }},
                         width: {{ ideal: 1280, max: 1920 }}, 
@@ -611,25 +612,20 @@ def main():
                         frameRate: {{ ideal: 30, max: 30 }},
                         aspectRatio: 16/9
                     }},
-                    audio: {{
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1
-                    }}
+                    audio: false  // Don't request audio when switching camera
                 }});
                 
-                // Replace video track in peer connection
-                const videoTrack = newStream.getVideoTracks()[0];
-                const audioTrack = newStream.getAudioTracks()[0];
+                // Get the new video track
+                const newVideoTrack = newVideoStream.getVideoTracks()[0];
                 
                 const senders = peerConnection.getSenders();
                 
-                // Replace video track
+                // Replace only the video track
                 const videoSender = senders.find(s => s.track && s.track.kind === 'video');
                 if (videoSender) {{
-                    await videoSender.replaceTrack(videoTrack);
+                    const oldVideoTrack = localStream.getVideoTracks()[0];
+                    
+                    await videoSender.replaceTrack(newVideoTrack);
                     
                     // Reapply encoding parameters
                     const parameters = videoSender.getParameters();
@@ -639,19 +635,19 @@ def main():
                         parameters.encodings[0].scaleResolutionDownBy = 1.0;
                         await videoSender.setParameters(parameters);
                     }}
+                    
+                    // Stop old video track
+                    if (oldVideoTrack) {{
+                        oldVideoTrack.stop();
+                    }}
                 }}
                 
-                // Replace audio track
-                const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
-                if (audioSender) {{
-                    await audioSender.replaceTrack(audioTrack);
-                }}
+                // Keep audio track from original stream, update video track
+                const audioTrack = localStream.getAudioTracks()[0];
+                localStream.removeTrack(localStream.getVideoTracks()[0]);
+                localStream.addTrack(newVideoTrack);
                 
-                // Stop old tracks
-                localStream.getTracks().forEach(track => track.stop());
-                
-                // Update local stream
-                localStream = newStream;
+                // Update local video display
                 localVideo.srcObject = localStream;
                 
                 console.log('Camera switched successfully');
