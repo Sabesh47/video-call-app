@@ -603,28 +603,28 @@ def main():
             console.log(`Switching to camera ${{currentCameraIndex + 1}} of ${{availableCameras.length}}`);
             
             try {{
-                // Get only video from the new camera
+                // Store old video track
+                const oldVideoTrack = localStream.getVideoTracks()[0];
+                
+                // Get only video from the new camera with more flexible constraints
                 const newVideoStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        deviceId: {{ exact: availableCameras[currentCameraIndex] }},
-                        width: {{ ideal: 1280, max: 1920 }}, 
-                        height: {{ ideal: 720, max: 1080 }},
-                        frameRate: {{ ideal: 30, max: 30 }},
-                        aspectRatio: 16/9
+                        deviceId: availableCameras[currentCameraIndex],  // Use non-exact constraint
+                        width: {{ ideal: 1280 }}, 
+                        height: {{ ideal: 720 }},
+                        frameRate: {{ ideal: 30 }}
                     }},
-                    audio: false  // Don't request audio when switching camera
+                    audio: false
                 }});
                 
                 // Get the new video track
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
                 
+                // Replace video track in peer connection
                 const senders = peerConnection.getSenders();
-                
-                // Replace only the video track
                 const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+                
                 if (videoSender) {{
-                    const oldVideoTrack = localStream.getVideoTracks()[0];
-                    
                     await videoSender.replaceTrack(newVideoTrack);
                     
                     // Reapply encoding parameters
@@ -633,19 +633,24 @@ def main():
                         parameters.encodings[0].maxBitrate = 2500000;
                         parameters.encodings[0].maxFramerate = 30;
                         parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                        await videoSender.setParameters(parameters);
-                    }}
-                    
-                    // Stop old video track
-                    if (oldVideoTrack) {{
-                        oldVideoTrack.stop();
+                        try {{
+                            await videoSender.setParameters(parameters);
+                        }} catch (e) {{
+                            console.warn('Could not set parameters:', e);
+                        }}
                     }}
                 }}
                 
-                // Keep audio track from original stream, update video track
+                // Stop old video track
+                oldVideoTrack.stop();
+                
+                // Create new stream with new video and existing audio
                 const audioTrack = localStream.getAudioTracks()[0];
-                localStream.removeTrack(localStream.getVideoTracks()[0]);
+                localStream = new MediaStream();
                 localStream.addTrack(newVideoTrack);
+                if (audioTrack) {{
+                    localStream.addTrack(audioTrack);
+                }}
                 
                 // Update local video display
                 localVideo.srcObject = localStream;
@@ -653,7 +658,9 @@ def main():
                 console.log('Camera switched successfully');
             }} catch (err) {{
                 console.error('Error flipping camera:', err);
-                alert(`Could not switch camera: ${{err.message}}`);
+                alert(`Could not switch camera: ${{err.message}}. Try allowing camera permissions.`);
+                // Revert to previous camera index
+                currentCameraIndex = (currentCameraIndex - 1 + availableCameras.length) % availableCameras.length;
             }}
         }}
 
