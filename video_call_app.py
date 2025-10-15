@@ -329,6 +329,8 @@ def main():
         let isLargeView = false;
         let currentCamera = 'user'; // 'user' or 'environment'
         let capturedSnapshot = null;
+        let availableCameras = []; // Initialize the array
+        let currentCameraIndex = 0; // Initialize the index
         
         // Persist session state
         sessionStorage.setItem('roomCode', roomCode);
