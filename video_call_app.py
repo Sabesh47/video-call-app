@@ -579,86 +579,52 @@ def main():
         }}
 
         async function flipCamera() {{
-            if (!localStream) return;
+            if (!localStream || !peerConnection) {{
+                console.warn('Cannot flip camera: stream or connection not ready.');
+                return;
+            }}
             
-            // Toggle between front and back camera
+            // Toggle between 'user' (front) and 'environment' (back)
             currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-            console.log(`Switching to ${{currentFacingMode === 'user' ? 'front' : 'back'}} camera`);
+            console.log(`Attempting to switch to ${{currentFacingMode}} camera.`);
             
             try {{
-                // Stop current video track
-                const oldVideoTrack = localStream.getVideoTracks()[0];
-                if (oldVideoTrack) {{
-                    oldVideoTrack.stop();
-                }}
-                
-                // Get new video stream with different camera
-                const newStream = await navigator.mediaDevices.getUserMedia({{
-                    video: {{ 
-                        facingMode: {{ exact: currentFacingMode }},
-                        width: {{ ideal: 1280, max: 1920 }}, 
-                        height: {{ ideal: 720, max: 1080 }},
-                        frameRate: {{ ideal: 30, max: 30 }},
-                        aspectRatio: 16/9
+                // 1. Get the new video stream with a flexible constraint
+                const newMediaStream = await navigator.mediaDevices.getUserMedia({{
+                    video: {{
+                        // THE FIX: Use a preference, not a demand
+                        facingMode: currentFacingMode,
+                        width: {{ ideal: 1280 }},
+                        height: {{ ideal: 720 }},
+                        frameRate: {{ ideal: 30 }}
                     }}
                 }});
                 
-                const newVideoTrack = newStream.getVideoTracks()[0];
+                const newVideoTrack = newMediaStream.getVideoTracks()[0];
                 
-                // Replace video track in peer connection
-                const videoSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                // 2. Find the video sender in the WebRTC connection
+                const videoSender = peerConnection.getSenders().find(sender => sender.track && sender.track.kind === 'video');
+                
                 if (videoSender) {{
+                    // 3. Replace the old video track with the new one
                     await videoSender.replaceTrack(newVideoTrack);
                     
-                    // Reapply encoding parameters for quality
-                    const parameters = videoSender.getParameters();
-                    if (parameters.encodings && parameters.encodings.length > 0) {{
-                        parameters.encodings[0].maxBitrate = 2500000;
-                        parameters.encodings[0].maxFramerate = 30;
-                        parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                        parameters.encodings[0].priority = 'high';
-                        parameters.encodings[0].networkPriority = 'high';
-                        await videoSender.setParameters(parameters).catch(e => console.warn('Encoding params:', e));
-                    }}
-                }}
-                
-                // Update local stream
-                localStream.removeTrack(oldVideoTrack);
-                localStream.addTrack(newVideoTrack);
-                localVideo.srcObject = localStream;
-                
-                console.log('Camera flipped successfully');
-            }} catch (err) {{
-                console.error('Error flipping camera:', err);
-                // If exact constraint fails, try without exact
-                try {{
-                    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({{
-                        video: {{ 
-                            facingMode: currentFacingMode,
-                            width: {{ ideal: 1280 }}, 
-                            height: {{ ideal: 720 }}
-                        }}
-                    }});
-                    
-                    const newVideoTrack = fallbackStream.getVideoTracks()[0];
-                    const videoSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (videoSender) {{
-                        await videoSender.replaceTrack(newVideoTrack);
-                    }}
-                    
+                    // 4. Update the local video element
                     const oldVideoTrack = localStream.getVideoTracks()[0];
                     localStream.removeTrack(oldVideoTrack);
+                    oldVideoTrack.stop(); // Stop the old track to release the camera
                     localStream.addTrack(newVideoTrack);
-                    localVideo.srcObject = localStream;
-                    oldVideoTrack.stop();
+                    localVideo.srcObject = localStream; // Re-assign the stream to the video element
                     
-                    console.log('Camera flipped with fallback');
-                }} catch (fallbackErr) {{
-                    console.error('Fallback also failed:', fallbackErr);
-                    alert('Could not flip camera. Your device may only have one camera or the browser does not support camera switching.');
-                    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user'; // revert
+                    console.log('Camera flipped successfully.');
+                }} else {{
+                    console.error('Could not find video sender to replace track.');
                 }}
+            }} catch (err) {{
+                console.error('Error flipping camera:', err);
+                alert('Could not flip the camera. The device might not support it or permissions may be denied.');
+                // Revert the mode if it failed
+                currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
             }}
         }}
 
