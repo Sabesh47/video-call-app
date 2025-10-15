@@ -1,11 +1,13 @@
 import streamlit as st
 import random
 import string
+import base64
+from datetime import datetime
 
 # Page config
 st.set_page_config(
-    page_title="Video Call App",
-    page_icon="📹",
+    page_title="Video KYC App",
+    page_icon="🎥",
     layout="wide"
 )
 
@@ -13,30 +15,41 @@ def generate_room_code():
     """Generate a simple 4-character room code"""
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
 
-# Initialize session state
+# Initialize session state with persistence
 if 'room_code' not in st.session_state:
     st.session_state.room_code = ''
 if 'in_call' not in st.session_state:
     st.session_state.in_call = False
-if 'is_host' not in st.session_state:
-    st.session_state.is_host = False
+if 'is_agent' not in st.session_state:
+    st.session_state.is_agent = False
+if 'snapshots' not in st.session_state:
+    st.session_state.snapshots = []
 
-# IMPORTANT: Replace this with your deployed signaling server URL
+# Signaling server
 SIGNALING_SERVER = "wss://signaling-server-2g74.onrender.com"
 
 def main():
-    st.title("📹 Real-Time Video Call")
+    st.title("🎥 Video KYC Application")
     
     # Instructions
-    with st.expander("ℹ️ Setup Instructions"):
+    with st.expander("ℹ️ How to Use"):
         st.markdown("""
-        **To use this app across devices:**
-        1. Deploy the signaling server (see `signaling_server.py`)
-        2. Update `SIGNALING_SERVER` variable with your server URL
-        3. Share your Streamlit app URL with others
+        **For Agents:**
+        1. Click "Start KYC Session" to create a room
+        2. Share the room code with customer
+        3. Click "Start Camera" when customer joins
+        4. Use "Capture KYC Photo" to take customer snapshots
         
-        **Current signaling server:** `{}`
-        """.format(SIGNALING_SERVER))
+        **For Customers:**
+        1. Enter the room code provided by agent
+        2. Click "Join Session"
+        3. Click "Start Camera" to begin KYC
+        
+        **Features:**
+        - Click on video to switch between large/small view
+        - Flip camera button for front/back camera
+        - Agent can capture and save customer snapshots
+        """)
     
     st.markdown("---")
     
@@ -45,37 +58,40 @@ def main():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🎯 Host a Call")
-            if st.button("🚀 Start Video Call", type="primary", use_container_width=True):
+            st.subheader("👨‍💼 Agent Portal")
+            if st.button("🚀 Start KYC Session", type="primary", use_container_width=True):
                 room_code = generate_room_code()
                 st.session_state.room_code = room_code
                 st.session_state.in_call = True
-                st.session_state.is_host = True
+                st.session_state.is_agent = True
                 st.rerun()
         
         with col2:
-            st.subheader("🚪 Join a Call")
+            st.subheader("👤 Customer Portal")
             with st.form("join_form"):
-                room_input = st.text_input("Room Code", max_chars=4, placeholder="e.g., A1B2")
-                if st.form_submit_button("🎬 Join Call", type="secondary", use_container_width=True):
+                room_input = st.text_input("Enter Room Code", max_chars=4, placeholder="e.g., A1B2")
+                if st.form_submit_button("📞 Join Session", type="secondary", use_container_width=True):
                     if room_input:
                         st.session_state.room_code = room_input.upper()
                         st.session_state.in_call = True
-                        st.session_state.is_host = False
+                        st.session_state.is_agent = False
                         st.rerun()
     else:
         # Video call interface
-        role = "Host" if st.session_state.is_host else "Guest"
-        st.success(f"✅ **Room: {st.session_state.room_code}** | You are the {role}")
+        role = "Agent" if st.session_state.is_agent else "Customer"
+        st.success(f"✅ **Room: {st.session_state.room_code}** | You are: {role}")
         
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.info("💡 Share this room code with others to join: **{}**".format(st.session_state.room_code))
+            if st.session_state.is_agent:
+                st.info(f"💡 Share this room code with customer: **{st.session_state.room_code}**")
+            else:
+                st.info(f"📱 Connected to KYC session: **{st.session_state.room_code}**")
         with col2:
-            if st.button("❌ Leave Call", type="primary", use_container_width=True):
+            if st.button("❌ End Session", type="primary", use_container_width=True):
                 st.session_state.in_call = False
                 st.session_state.room_code = ''
-                st.session_state.is_host = False
+                st.session_state.is_agent = False
                 st.rerun()
         
         st.markdown("---")
@@ -86,115 +102,214 @@ def main():
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Video Call</title>
     <style>
-        body {{
+        * {{
             margin: 0;
-            padding: 10px;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
-            overflow-x: hidden;
+            padding: 15px;
         }}
         .video-container {{
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 10px;
-        }}
-        .video-box {{
             position: relative;
-            background: #1a1a2e;
+            width: 100%;
+            height: 75vh;
+            background: #000;
             border-radius: 15px;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            border: 2px solid rgba(255,255,255,0.1);
-            width: 100%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
         }}
-        .video-box video {{
+        #remoteVideo {{
             width: 100%;
-            height: 250px;
+            height: 100%;
+            object-fit: contain;
+            background: #1a1a1a;
+        }}
+        #localVideo {{
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
             object-fit: cover;
-            background: #000;
+            border-radius: 12px;
+            border: 3px solid #fff;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }}
+        #localVideo.large {{
+            width: 100%;
+            height: 100%;
+            bottom: 0;
+            right: 0;
+            border-radius: 0;
+            border: none;
+        }}
+        #remoteVideo.small {{
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 3px solid #fff;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.4);
         }}
         .video-label {{
             position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
+            top: 15px;
+            left: 15px;
+            background: rgba(0,0,0,0.85);
             color: white;
-            padding: 6px 12px;
-            border-radius: 15px;
-            font-size: 12px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
             font-weight: 600;
             backdrop-filter: blur(10px);
+            z-index: 10;
         }}
         .status {{
             position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.8);
+            top: 15px;
+            right: 15px;
+            background: rgba(0,0,0,0.85);
             color: #4ade80;
-            padding: 4px 10px;
-            border-radius: 10px;
-            font-size: 11px;
+            padding: 6px 14px;
+            border-radius: 15px;
+            font-size: 12px;
             font-weight: 600;
+            z-index: 10;
         }}
         .controls {{
-            text-align: center;
-            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
         }}
         .btn {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 24px;
-            border-radius: 25px;
+            padding: 14px 28px;
+            border-radius: 30px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            margin: 0 5px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            transition: transform 0.2s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }}
-        .btn:hover {{
+        .btn:hover:not(:disabled) {{
             transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
         }}
         .btn:disabled {{
             opacity: 0.5;
             cursor: not-allowed;
         }}
+        .btn-capture {{
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }}
+        .btn-flip {{
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }}
         #connectionStatus {{
             text-align: center;
             color: white;
-            margin: 10px 0;
-            font-size: 13px;
+            margin-bottom: 15px;
+            font-size: 14px;
             font-weight: 500;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+        }}
+        .snapshot-preview {{
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+            z-index: 1000;
+            max-width: 90%;
+            display: none;
+        }}
+        .snapshot-preview.show {{
+            display: block;
+        }}
+        .snapshot-preview img {{
+            max-width: 100%;
+            max-height: 60vh;
+            border-radius: 10px;
+        }}
+        .snapshot-buttons {{
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+        }}
+        .overlay {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+            display: none;
+        }}
+        .overlay.show {{
+            display: block;
+        }}
+        @media (max-width: 768px) {{
+            #localVideo {{
+                width: 120px;
+                height: 90px;
+                bottom: 10px;
+                right: 10px;
+            }}
         }}
     </style>
 </head>
 <body>
-    <div id="connectionStatus">🔄 Connecting to signaling server...</div>
+    <div id="connectionStatus">🔄 Connecting to server...</div>
     
-    <div class="video-container">
-        <div class="video-box">
-            <video id="localVideo" autoplay muted playsinline></video>
-            <div class="video-label">📹 You ({role})</div>
-            <div class="status" id="localStatus">Camera Off</div>
-        </div>
-        <div class="video-box">
-            <video id="remoteVideo" autoplay playsinline></video>
-            <div class="video-label">📺 Remote Participant</div>
-            <div class="status" id="remoteStatus">Waiting...</div>
-        </div>
+    <div class="video-container" id="videoContainer">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay muted playsinline onclick="switchView()"></video>
+        <div class="video-label" id="mainLabel">Customer</div>
+        <div class="status" id="connectionState">Waiting...</div>
     </div>
 
     <div class="controls">
         <button class="btn" id="startBtn" onclick="startCall()">🚀 Start Camera</button>
         <button class="btn" id="muteBtn" onclick="toggleMute()" disabled>🎤 Mute</button>
-        <button class="btn" id="videoBtn" onclick="toggleVideo()" disabled>📹 Video Off</button>
+        <button class="btn" id="videoBtn" onclick="toggleVideo()" disabled>📹 Stop Video</button>
+        <button class="btn btn-flip" id="flipBtn" onclick="flipCamera()" disabled>🔄 Flip Camera</button>
+        {('<button class="btn btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled>📸 Capture KYC Photo</button>' if st.session_state.is_agent else '')}
+    </div>
+
+    <div class="overlay" id="overlay" onclick="closePreview()"></div>
+    <div class="snapshot-preview" id="snapshotPreview">
+        <h3 style="margin-bottom: 15px; text-align: center;">KYC Snapshot</h3>
+        <img id="snapshotImg" src="" alt="Snapshot">
+        <div class="snapshot-buttons">
+            <button class="btn" onclick="saveSnapshot()">💾 Save</button>
+            <button class="btn" onclick="retakeSnapshot()">🔄 Retake</button>
+            <button class="btn" onclick="closePreview()">❌ Cancel</button>
+        </div>
     </div>
 
     <script>
@@ -203,11 +318,19 @@ def main():
         let localStream = null;
         let peerConnection = null;
         let ws = null;
-        let isHost = {str(st.session_state.is_host).lower()};
+        let isAgent = {str(st.session_state.is_agent).lower()};
         let roomCode = '{st.session_state.room_code}';
         let isMuted = false;
         let isVideoOff = false;
+        let isLargeView = false;
+        let currentCamera = 'user'; // 'user' or 'environment'
+        let capturedSnapshot = null;
         
+        // Persist session state
+        sessionStorage.setItem('roomCode', roomCode);
+        sessionStorage.setItem('isAgent', isAgent);
+        sessionStorage.setItem('inCall', 'true');
+
         const configuration = {{
             iceServers: [
                 {{ urls: 'stun:stun.l.google.com:19302' }},
@@ -234,34 +357,32 @@ def main():
             iceCandidatePoolSize: 10
         }};
 
-        // Connect to signaling server
         function connectSignaling() {{
             const signalingServer = '{SIGNALING_SERVER}';
             ws = new WebSocket(signalingServer);
             
             ws.onopen = function() {{
                 console.log('Connected to signaling server');
-                document.getElementById('connectionStatus').textContent = '✅ Connected to server';
-                document.getElementById('connectionStatus').style.color = '#4ade80';
+                document.getElementById('connectionStatus').innerHTML = '✅ Connected to server';
+                document.getElementById('connectionStatus').style.background = 'rgba(74, 222, 128, 0.3)';
                 
-                // Join room
                 ws.send(JSON.stringify({{
                     type: 'join',
                     room: roomCode,
-                    role: isHost ? 'host' : 'guest'
+                    role: isAgent ? 'agent' : 'customer'
                 }}));
             }};
             
             ws.onerror = function(error) {{
                 console.error('WebSocket error:', error);
-                document.getElementById('connectionStatus').textContent = '❌ Connection error - check signaling server';
-                document.getElementById('connectionStatus').style.color = '#ef4444';
+                document.getElementById('connectionStatus').innerHTML = '❌ Connection error';
+                document.getElementById('connectionStatus').style.background = 'rgba(239, 68, 68, 0.3)';
             }};
             
             ws.onclose = function() {{
-                document.getElementById('connectionStatus').textContent = '⚠️ Disconnected from server';
-                document.getElementById('connectionStatus').style.color = '#f59e0b';
-                setTimeout(connectSignaling, 3000); // Reconnect after 3s
+                document.getElementById('connectionStatus').innerHTML = '⚠️ Disconnected - Reconnecting...';
+                document.getElementById('connectionStatus').style.background = 'rgba(251, 146, 60, 0.3)';
+                setTimeout(connectSignaling, 3000);
             }};
             
             ws.onmessage = async function(event) {{
@@ -275,14 +396,14 @@ def main():
             
             switch (message.type) {{
                 case 'ready':
-                    document.getElementById('remoteStatus').textContent = 'Peer Ready';
-                    if (isHost && peerConnection) {{
+                    document.getElementById('connectionState').textContent = 'Peer Ready';
+                    if (isAgent && peerConnection) {{
                         await createOffer();
                     }}
                     break;
                     
                 case 'offer':
-                    if (!isHost && peerConnection) {{
+                    if (!isAgent && peerConnection) {{
                         await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
                         const answer = await peerConnection.createAnswer();
                         await peerConnection.setLocalDescription(answer);
@@ -295,14 +416,18 @@ def main():
                     break;
                     
                 case 'answer':
-                    if (isHost && peerConnection) {{
+                    if (isAgent && peerConnection) {{
                         await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
                     }}
                     break;
                     
                 case 'ice-candidate':
                     if (peerConnection && message.candidate) {{
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                        try {{
+                            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                        }} catch (e) {{
+                            console.error('Error adding ice candidate:', e);
+                        }}
                     }}
                     break;
             }}
@@ -312,22 +437,27 @@ def main():
             try {{
                 localStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
+                        facingMode: currentCamera,
                         width: {{ ideal: 640 }}, 
                         height: {{ ideal: 480 }},
-                        frameRate: {{ ideal: 15, max: 20 }}
+                        frameRate: {{ ideal: 24, max: 30 }}
                     }},
                     audio: {{
                         echoCancellation: true,
                         noiseSuppression: true,
-                        autoGainControl: true
+                        autoGainControl: true,
+                        sampleRate: 48000
                     }}
                 }});
                 
                 localVideo.srcObject = localStream;
-                document.getElementById('localStatus').textContent = 'Camera On';
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('muteBtn').disabled = false;
                 document.getElementById('videoBtn').disabled = false;
+                document.getElementById('flipBtn').disabled = false;
+                if (isAgent) {{
+                    document.getElementById('captureBtn').disabled = false;
+                }}
                 
                 await initWebRTC();
             }} catch (err) {{
@@ -339,26 +469,26 @@ def main():
         async function initWebRTC() {{
             peerConnection = new RTCPeerConnection(configuration);
 
-            // Add local tracks with bitrate limits
             localStream.getTracks().forEach(track => {{
                 const sender = peerConnection.addTrack(track, localStream);
                 
-                // Limit video bitrate to improve performance
                 if (track.kind === 'video') {{
                     const parameters = sender.getParameters();
                     if (!parameters.encodings) {{
                         parameters.encodings = [{{}}];
                     }}
-                    parameters.encodings[0].maxBitrate = 500000; // 500 kbps
+                    // Adaptive bitrate
+                    parameters.encodings[0].maxBitrate = 800000; // 800 kbps
+                    parameters.encodings[0].scaleResolutionDownBy = 1;
                     sender.setParameters(parameters);
                 }}
             }});
 
-            // Handle remote stream
             peerConnection.ontrack = function(event) {{
                 if (!remoteVideo.srcObject) {{
                     remoteVideo.srcObject = event.streams[0];
-                    document.getElementById('remoteStatus').textContent = 'Connected';
+                    document.getElementById('connectionState').textContent = 'Connected';
+                    document.getElementById('connectionState').style.color = '#4ade80';
                 }}
             }};
 
@@ -373,15 +503,17 @@ def main():
             }};
 
             peerConnection.onconnectionstatechange = function() {{
-                console.log('Connection state:', peerConnection.connectionState);
-                if (peerConnection.connectionState === 'connected') {{
-                    document.getElementById('remoteStatus').textContent = 'Connected';
-                }} else if (peerConnection.connectionState === 'disconnected') {{
-                    document.getElementById('remoteStatus').textContent = 'Disconnected';
+                const state = peerConnection.connectionState;
+                console.log('Connection state:', state);
+                document.getElementById('connectionState').textContent = state.charAt(0).toUpperCase() + state.slice(1);
+                
+                if (state === 'connected') {{
+                    document.getElementById('connectionState').style.color = '#4ade80';
+                }} else if (state === 'disconnected' || state === 'failed') {{
+                    document.getElementById('connectionState').style.color = '#ef4444';
                 }}
             }};
 
-            // Notify that we're ready
             if (ws && ws.readyState === WebSocket.OPEN) {{
                 ws.send(JSON.stringify({{
                     type: 'ready',
@@ -421,18 +553,125 @@ def main():
                 if (videoTrack) {{
                     videoTrack.enabled = !videoTrack.enabled;
                     isVideoOff = !videoTrack.enabled;
-                    document.getElementById('videoBtn').textContent = isVideoOff ? '📹 Video On' : '📹 Video Off';
-                    document.getElementById('localStatus').textContent = isVideoOff ? 'Camera Off' : 'Camera On';
+                    document.getElementById('videoBtn').textContent = isVideoOff ? '📹 Start Video' : '📹 Stop Video';
                 }}
             }}
         }}
 
-        // Initialize
+        async function flipCamera() {{
+            if (!localStream) return;
+            
+            currentCamera = currentCamera === 'user' ? 'environment' : 'user';
+            
+            try {{
+                const newStream = await navigator.mediaDevices.getUserMedia({{
+                    video: {{ 
+                        facingMode: currentCamera,
+                        width: {{ ideal: 640 }}, 
+                        height: {{ ideal: 480 }},
+                        frameRate: {{ ideal: 24, max: 30 }}
+                    }},
+                    audio: true
+                }});
+                
+                // Replace video track
+                const videoTrack = newStream.getVideoTracks()[0];
+                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {{
+                    sender.replaceTrack(videoTrack);
+                }}
+                
+                // Stop old track
+                localStream.getVideoTracks()[0].stop();
+                
+                // Update local stream
+                localStream.removeTrack(localStream.getVideoTracks()[0]);
+                localStream.addTrack(videoTrack);
+                localVideo.srcObject = localStream;
+            }} catch (err) {{
+                console.error('Error flipping camera:', err);
+                alert('Could not flip camera. This feature may not be available on your device.');
+            }}
+        }}
+
+        function switchView() {{
+            isLargeView = !isLargeView;
+            
+            if (isLargeView) {{
+                localVideo.classList.add('large');
+                remoteVideo.classList.add('small');
+                document.getElementById('mainLabel').textContent = isAgent ? 'Agent' : 'Customer';
+            }} else {{
+                localVideo.classList.remove('large');
+                remoteVideo.classList.remove('small');
+                document.getElementById('mainLabel').textContent = isAgent ? 'Customer' : 'Agent';
+            }}
+        }}
+
+        function captureSnapshot() {{
+            if (!remoteVideo.srcObject) {{
+                alert('No customer video available to capture!');
+                return;
+            }}
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = remoteVideo.videoWidth;
+            canvas.height = remoteVideo.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(remoteVideo, 0, 0, canvas.width, canvas.height);
+            
+            capturedSnapshot = canvas.toDataURL('image/jpeg', 0.9);
+            document.getElementById('snapshotImg').src = capturedSnapshot;
+            document.getElementById('overlay').classList.add('show');
+            document.getElementById('snapshotPreview').classList.add('show');
+        }}
+
+        function saveSnapshot() {{
+            if (capturedSnapshot) {{
+                const link = document.createElement('a');
+                link.download = `KYC_${{roomCode}}_${{new Date().toISOString().slice(0,19).replace(/:/g,'-')}}.jpg`;
+                link.href = capturedSnapshot;
+                link.click();
+                closePreview();
+                alert('KYC snapshot saved successfully!');
+            }}
+        }}
+
+        function retakeSnapshot() {{
+            closePreview();
+            setTimeout(() => captureSnapshot(), 100);
+        }}
+
+        function closePreview() {{
+            document.getElementById('overlay').classList.remove('show');
+            document.getElementById('snapshotPreview').classList.remove('show');
+            capturedSnapshot = null;
+        }}
+
+        // Auto-reconnect on page refresh
+        window.addEventListener('beforeunload', function() {{
+            if (peerConnection) {{
+                peerConnection.close();
+            }}
+            if (ws) {{
+                ws.close();
+            }}
+        }});
+
         connectSignaling();
     </script>
 </body>
 </html>
-        """, height=800)
+        """, height=900)
+
+        # Show captured snapshots (Agent only)
+        if st.session_state.is_agent and st.session_state.snapshots:
+            st.markdown("---")
+            st.subheader("📸 Captured KYC Snapshots")
+            cols = st.columns(3)
+            for idx, snapshot in enumerate(st.session_state.snapshots):
+                with cols[idx % 3]:
+                    st.image(snapshot, caption=f"Snapshot {idx + 1}", use_container_width=True)
 
 if __name__ == "__main__":
     main()
