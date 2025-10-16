@@ -194,40 +194,68 @@ def main():
             z-index: 10;
         }}
         .controls {{
-            display: flex;
-            justify-content: center;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 12px;
             margin-top: 20px;
-            flex-wrap: wrap;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 0 10px;
         }}
         .btn {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 14px 28px;
-            border-radius: 30px;
-            font-size: 14px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            transition: all 0.2s;
-            display: inline-flex;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
+            min-height: 56px;
+            text-align: center;
+            white-space: nowrap;
         }}
         .btn:hover:not(:disabled) {{
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+        }}
+        .btn:active:not(:disabled) {{
+            transform: translateY(0);
         }}
         .btn:disabled {{
-            opacity: 0.5;
+            opacity: 0.4;
             cursor: not-allowed;
+            background: #6b7280;
         }}
         .btn-capture {{
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         }}
         .btn-flip {{
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }}
+        .btn-mute {{
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }}
+        .btn-video {{
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }}
+        .btn-record {{
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }}
+        .btn-record.recording {{
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            animation: pulse 2s infinite;
+        }}
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.8; }}
         }}
         #connectionStatus {{
             text-align: center;
@@ -280,11 +308,32 @@ def main():
             display: block;
         }}
         @media (max-width: 768px) {{
+            .controls {{
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }}
+            .btn {{
+                padding: 14px 16px;
+                font-size: 14px;
+                min-height: 52px;
+            }}
             #localVideo {{
                 width: 120px;
                 height: 90px;
                 bottom: 10px;
                 right: 10px;
+            }}
+            .video-container {{
+                height: 60vh;
+            }}
+        }}
+        @media (max-width: 480px) {{
+            .controls {{
+                grid-template-columns: 1fr;
+            }}
+            .btn {{
+                font-size: 15px;
+                padding: 16px 20px;
             }}
         }}
     </style>
