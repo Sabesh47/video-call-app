@@ -39,6 +39,7 @@ def main():
         2. Share the room code with customer
         3. Click "Start Camera" when customer joins
         4. Use "Capture KYC Photo" to take customer snapshots
+        5. Use "Start Recording" to record the entire call
         
         **For Customers:**
         1. Enter the room code provided by agent
@@ -47,8 +48,9 @@ def main():
         
         **Features:**
         - Click on video to switch between large/small view
-        - Flip camera button for front/back camera
+        - Flip camera button cycles through all available cameras
         - Agent can capture and save customer snapshots
+        - Agent can record the entire call with both video and audio
         """)
     
     st.markdown("---")
@@ -303,6 +305,7 @@ def main():
         <button class="btn" id="videoBtn" onclick="toggleVideo()" disabled>📹 Stop Video</button>
         <button class="btn btn-flip" id="flipBtn" onclick="flipCamera()" disabled>🔄 Flip Camera</button>
         {('<button class="btn btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled>📸 Capture KYC Photo</button>' if st.session_state.is_agent else '')}
+        {('<button class="btn" id="recordBtn" onclick="toggleRecording()" disabled style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">⏺️ Start Recording</button>' if st.session_state.is_agent else '')}
     </div>
 
     <div class="overlay" id="overlay" onclick="closePreview()"></div>
@@ -327,8 +330,13 @@ def main():
         let isMuted = false;
         let isVideoOff = false;
         let isLargeView = false;
-        let currentCamera = 'user'; // 'user' or 'environment'
+        let currentFacingMode = 'user';
+        let availableCameras = [];
+        let currentCameraIndex = 0;
         let capturedSnapshot = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecording = false;
         
         // Persist session state
         sessionStorage.setItem('roomCode', roomCode);
@@ -440,16 +448,54 @@ def main():
             }}
         }}
 
+        async function enumerateCameras() {{
+            try {{
+                // Request permissions first
+                const tempStream = await navigator.mediaDevices.getUserMedia({{ video: true }});
+                tempStream.getTracks().forEach(track => track.stop());
+                
+                // Now enumerate devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableCameras = devices.filter(device => device.kind === 'videoinput');
+                
+                console.log('Available cameras:', availableCameras.length);
+                availableCameras.forEach((camera, index) => {{
+                    console.log(`Camera ${{index}}: ${{camera.label || 'Camera ' + (index + 1)}}`);
+                }});
+                
+                // Set initial facing mode based on first camera
+                if (availableCameras.length > 0) {{
+                    const firstCamera = availableCameras[0].label.toLowerCase();
+                    currentFacingMode = firstCamera.includes('front') || firstCamera.includes('user') ? 'user' : 'environment';
+                }}
+            }} catch (err) {{
+                console.error('Error enumerating cameras:', err);
+                availableCameras = [];
+            }}
+        }}
+
         async function startCall() {{
             try {{
-                localStream = await navigator.mediaDevices.getUserMedia({{
-                    video: {{ 
+                // Enumerate available cameras first
+                await enumerateCameras();
+                
+                // Get initial camera device ID
+                const videoConstraints = availableCameras.length > 0 
+                    ? {{ 
+                        deviceId: {{ exact: availableCameras[currentCameraIndex].deviceId }},
+                        width: {{ ideal: 1280, max: 1920 }}, 
+                        height: {{ ideal: 720, max: 1080 }},
+                        frameRate: {{ ideal: 30, max: 30 }}
+                    }}
+                    : {{ 
                         facingMode: currentFacingMode,
                         width: {{ ideal: 1280, max: 1920 }}, 
                         height: {{ ideal: 720, max: 1080 }},
-                        frameRate: {{ ideal: 30, max: 30 }},
-                        aspectRatio: 16/9
-                    }},
+                        frameRate: {{ ideal: 30, max: 30 }}
+                    }};
+                
+                localStream = await navigator.mediaDevices.getUserMedia({{
+                    video: videoConstraints,
                     audio: {{
                         echoCancellation: true,
                         noiseSuppression: true,
@@ -467,6 +513,7 @@ def main():
                 
                 if (isAgent) {{
                     document.getElementById('captureBtn').disabled = false;
+                    document.getElementById('recordBtn').disabled = false;
                 }}
                 
                 await initWebRTC();
@@ -581,9 +628,21 @@ def main():
         async function flipCamera() {{
             if (!localStream) return;
             
-            // Toggle between front and back camera
-            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-            console.log(`Switching to ${{currentFacingMode === 'user' ? 'front' : 'back'}} camera`);
+            // Move to next camera
+            currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+            
+            if (availableCameras.length === 0) {{
+                alert('No cameras available to switch');
+                return;
+            }}
+            
+            if (availableCameras.length === 1) {{
+                alert('Only one camera available on this device');
+                return;
+            }}
+            
+            const nextCamera = availableCameras[currentCameraIndex];
+            console.log('Switching to camera:', nextCamera.label);
             
             try {{
                 // Stop current video track
@@ -592,14 +651,13 @@ def main():
                     oldVideoTrack.stop();
                 }}
                 
-                // Get new video stream with different camera
+                // Get new video stream with specific camera
                 const newStream = await navigator.mediaDevices.getUserMedia({{
                     video: {{ 
-                        facingMode: {{ exact: currentFacingMode }},
+                        deviceId: {{ exact: nextCamera.deviceId }},
                         width: {{ ideal: 1280, max: 1920 }}, 
                         height: {{ ideal: 720, max: 1080 }},
-                        frameRate: {{ ideal: 30, max: 30 }},
-                        aspectRatio: 16/9
+                        frameRate: {{ ideal: 30, max: 30 }}
                     }}
                 }});
                 
@@ -627,38 +685,17 @@ def main():
                 localStream.addTrack(newVideoTrack);
                 localVideo.srcObject = localStream;
                 
-                console.log('Camera flipped successfully');
+                // Update recording stream if recording
+                if (isRecording && mediaRecorder) {{
+                    await stopAndRestartRecording();
+                }}
+                
+                console.log('Camera flipped successfully to:', nextCamera.label);
             }} catch (err) {{
                 console.error('Error flipping camera:', err);
-                // If exact constraint fails, try without exact
-                try {{
-                    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-                    const fallbackStream = await navigator.mediaDevices.getUserMedia({{
-                        video: {{ 
-                            facingMode: currentFacingMode,
-                            width: {{ ideal: 1280 }}, 
-                            height: {{ ideal: 720 }}
-                        }}
-                    }});
-                    
-                    const newVideoTrack = fallbackStream.getVideoTracks()[0];
-                    const videoSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (videoSender) {{
-                        await videoSender.replaceTrack(newVideoTrack);
-                    }}
-                    
-                    const oldVideoTrack = localStream.getVideoTracks()[0];
-                    localStream.removeTrack(oldVideoTrack);
-                    localStream.addTrack(newVideoTrack);
-                    localVideo.srcObject = localStream;
-                    oldVideoTrack.stop();
-                    
-                    console.log('Camera flipped with fallback');
-                }} catch (fallbackErr) {{
-                    console.error('Fallback also failed:', fallbackErr);
-                    alert('Could not flip camera. Your device may only have one camera or the browser does not support camera switching.');
-                    currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user'; // revert
-                }}
+                alert('Could not flip camera: ' + err.message);
+                // Revert to previous camera
+                currentCameraIndex = (currentCameraIndex - 1 + availableCameras.length) % availableCameras.length;
             }}
         }}
 
@@ -714,6 +751,187 @@ def main():
             document.getElementById('overlay').classList.remove('show');
             document.getElementById('snapshotPreview').classList.remove('show');
             capturedSnapshot = null;
+        }}
+        
+        async function toggleRecording() {{
+            if (!isRecording) {{
+                await startRecording();
+            }} else {{
+                await stopRecording();
+            }}
+        }}
+        
+        async function startRecording() {{
+            try {{
+                // Create a composite stream with both local and remote video/audio
+                const canvas = document.createElement('canvas');
+                canvas.width = 1280;
+                canvas.height = 720;
+                const ctx = canvas.getContext('2d');
+                
+                // Capture canvas stream
+                const canvasStream = canvas.captureStream(30);
+                
+                // Create audio context to mix audio streams
+                const audioContext = new AudioContext();
+                const audioDestination = audioContext.createMediaStreamDestination();
+                
+                // Add local audio
+                if (localStream && localStream.getAudioTracks().length > 0) {{
+                    const localAudioSource = audioContext.createMediaStreamSource(
+                        new MediaStream([localStream.getAudioTracks()[0]])
+                    );
+                    localAudioSource.connect(audioDestination);
+                }}
+                
+                // Add remote audio
+                if (remoteVideo.srcObject && remoteVideo.srcObject.getAudioTracks().length > 0) {{
+                    const remoteAudioSource = audioContext.createMediaStreamSource(
+                        new MediaStream([remoteVideo.srcObject.getAudioTracks()[0]])
+                    );
+                    remoteAudioSource.connect(audioDestination);
+                }}
+                
+                // Combine video and audio streams
+                const recordStream = new MediaStream([
+                    ...canvasStream.getVideoTracks(),
+                    ...audioDestination.stream.getAudioTracks()
+                ]);
+                
+                // Setup MediaRecorder
+                const options = {{
+                    mimeType: 'video/webm;codecs=vp9,opus',
+                    videoBitsPerSecond: 2500000
+                }};
+                
+                // Fallback for Safari/iOS
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {{
+                    options.mimeType = 'video/webm;codecs=vp8,opus';
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {{
+                        options.mimeType = 'video/webm';
+                    }}
+                }}
+                
+                mediaRecorder = new MediaRecorder(recordStream, options);
+                recordedChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {{
+                    if (event.data && event.data.size > 0) {{
+                        recordedChunks.push(event.data);
+                    }}
+                }};
+                
+                mediaRecorder.onstop = () => {{
+                    const blob = new Blob(recordedChunks, {{ type: 'video/webm' }});
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `KYC_Recording_${{roomCode}}_${{new Date().toISOString().slice(0,19).replace(/:/g,'-')}}.webm`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    recordedChunks = [];
+                }};
+                
+                mediaRecorder.start(1000); // Collect data every second
+                isRecording = true;
+                
+                document.getElementById('recordBtn').textContent = '⏹️ Stop Recording';
+                document.getElementById('recordBtn').style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                
+                // Draw both videos onto canvas
+                const drawVideos = () => {{
+                    if (!isRecording) return;
+                    
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw remote video (customer) - larger
+                    if (remoteVideo.srcObject && remoteVideo.readyState >= 2) {{
+                        const videoAspect = remoteVideo.videoWidth / remoteVideo.videoHeight;
+                        const canvasAspect = canvas.width / canvas.height;
+                        let drawWidth, drawHeight, drawX, drawY;
+                        
+                        if (videoAspect > canvasAspect) {{
+                            drawHeight = canvas.height;
+                            drawWidth = drawHeight * videoAspect;
+                            drawX = (canvas.width - drawWidth) / 2;
+                            drawY = 0;
+                        }} else {{
+                            drawWidth = canvas.width;
+                            drawHeight = drawWidth / videoAspect;
+                            drawX = 0;
+                            drawY = (canvas.height - drawHeight) / 2;
+                        }}
+                        
+                        ctx.drawImage(remoteVideo, drawX, drawY, drawWidth, drawHeight);
+                    }}
+                    
+                    // Draw local video (agent) - smaller, picture-in-picture
+                    if (localStream && localVideo.readyState >= 2) {{
+                        const pipWidth = 240;
+                        const pipHeight = 180;
+                        const pipX = canvas.width - pipWidth - 20;
+                        const pipY = canvas.height - pipHeight - 20;
+                        
+                        // Draw border
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(pipX - 2, pipY - 2, pipWidth + 4, pipHeight + 4);
+                        
+                        ctx.drawImage(localVideo, pipX, pipY, pipWidth, pipHeight);
+                    }}
+                    
+                    // Add recording indicator
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(30, 30, 12, 0, 2 * Math.PI);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText('REC', 50, 38);
+                    
+                    // Add timestamp
+                    const timestamp = new Date().toLocaleTimeString();
+                    ctx.fillText(timestamp, canvas.width - 120, 38);
+                    
+                    requestAnimationFrame(drawVideos);
+                }};
+                
+                drawVideos();
+                console.log('Recording started');
+                
+            }} catch (err) {{
+                console.error('Error starting recording:', err);
+                alert('Could not start recording: ' + err.message);
+                isRecording = false;
+            }}
+        }}
+        
+        async function stopRecording() {{
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {{
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                document.getElementById('recordBtn').textContent = '⏺️ Start Recording';
+                document.getElementById('recordBtn').style.background = 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)';
+                
+                console.log('Recording stopped');
+            }}
+        }}
+        
+        async function stopAndRestartRecording() {{
+            // Helper function to restart recording when camera flips
+            if (isRecording) {{
+                const wasRecording = true;
+                await stopRecording();
+                // Wait a bit for the camera to stabilize
+                setTimeout(async () => {{
+                    if (wasRecording) {{
+                        await startRecording();
+                    }}
+                }}, 500);
+            }}
         }}
 
         // Monitor and adjust video quality based on network conditions
@@ -781,6 +999,9 @@ def main():
 
         // Auto-reconnect on page refresh
         window.addEventListener('beforeunload', function() {{
+            if (isRecording) {{
+                stopRecording();
+            }}
             if (peerConnection) {{
                 peerConnection.close();
             }}
