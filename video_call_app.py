@@ -115,6 +115,8 @@ def main():
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
             padding: 15px;
+            padding-bottom: 20px;
+            overflow-x: hidden;
         }}
         .video-container {{
             position: relative;
@@ -349,12 +351,24 @@ def main():
     </div>
 
     <div class="controls">
-        <button class="btn" id="startBtn" onclick="startCall()">🚀 Start Camera</button>
-        <button class="btn" id="muteBtn" onclick="toggleMute()" disabled>🎤 Mute</button>
-        <button class="btn" id="videoBtn" onclick="toggleVideo()" disabled>📹 Stop Video</button>
-        <button class="btn btn-flip" id="flipBtn" onclick="flipCamera()" disabled>🔄 Flip Camera</button>
-        {('<button class="btn btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled>📸 Capture KYC Photo</button>' if st.session_state.is_agent else '')}
-        {('<button class="btn" id="recordBtn" onclick="toggleRecording()" disabled style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">⏺️ Start Recording</button>' if st.session_state.is_agent else '')}
+        <button class="btn" id="startBtn" onclick="startCall()">
+            <span>🚀</span>
+            <span>Start Camera</span>
+        </button>
+        <button class="btn btn-mute" id="muteBtn" onclick="toggleMute()" disabled>
+            <span>🎤</span>
+            <span>Mute</span>
+        </button>
+        <button class="btn btn-video" id="videoBtn" onclick="toggleVideo()" disabled>
+            <span>📹</span>
+            <span>Stop Video</span>
+        </button>
+        <button class="btn btn-flip" id="flipBtn" onclick="flipCamera()" disabled>
+            <span>🔄</span>
+            <span>Flip Camera</span>
+        </button>
+        {('<button class="btn btn-capture" id="captureBtn" onclick="captureSnapshot()" disabled><span>📸</span><span>Capture Photo</span></button>' if st.session_state.is_agent else '')}
+        {('<button class="btn btn-record" id="recordBtn" onclick="toggleRecording()" disabled><span>⏺️</span><span>Start Recording</span></button>' if st.session_state.is_agent else '')}
     </div>
 
     <div class="overlay" id="overlay" onclick="closePreview()"></div>
@@ -658,7 +672,8 @@ def main():
                 if (audioTrack) {{
                     audioTrack.enabled = !audioTrack.enabled;
                     isMuted = !audioTrack.enabled;
-                    document.getElementById('muteBtn').textContent = isMuted ? '🔇 Unmute' : '🎤 Mute';
+                    const btn = document.getElementById('muteBtn');
+                    btn.innerHTML = isMuted ? '<span>🔇</span><span>Unmute</span>' : '<span>🎤</span><span>Mute</span>';
                 }}
             }}
         }}
@@ -669,7 +684,8 @@ def main():
                 if (videoTrack) {{
                     videoTrack.enabled = !videoTrack.enabled;
                     isVideoOff = !videoTrack.enabled;
-                    document.getElementById('videoBtn').textContent = isVideoOff ? '📹 Start Video' : '📹 Stop Video';
+                    const btn = document.getElementById('videoBtn');
+                    btn.innerHTML = isVideoOff ? '<span>📹</span><span>Start Video</span>' : '<span>📹</span><span>Stop Video</span>';
                 }}
             }}
         }}
@@ -814,15 +830,18 @@ def main():
             try {{
                 // Create a composite stream with both local and remote video/audio
                 const canvas = document.createElement('canvas');
-                canvas.width = 1280;
-                canvas.height = 720;
-                const ctx = canvas.getContext('2d');
+                canvas.width = 1920;  // Full HD resolution
+                canvas.height = 1080;
+                const ctx = canvas.getContext('2d', {{ 
+                    alpha: false,
+                    desynchronized: true 
+                }});
                 
-                // Capture canvas stream
-                const canvasStream = canvas.captureStream(30);
+                // Capture canvas stream at 60fps
+                const canvasStream = canvas.captureStream(60);
                 
                 // Create audio context to mix audio streams
-                const audioContext = new AudioContext();
+                const audioContext = new AudioContext({{ sampleRate: 48000 }});
                 const audioDestination = audioContext.createMediaStreamDestination();
                 
                 // Add local audio
@@ -847,17 +866,20 @@ def main():
                     ...audioDestination.stream.getAudioTracks()
                 ]);
                 
-                // Setup MediaRecorder
+                // Setup MediaRecorder with highest quality
                 const options = {{
                     mimeType: 'video/webm;codecs=vp9,opus',
-                    videoBitsPerSecond: 2500000
+                    videoBitsPerSecond: 8000000,  // 8 Mbps for excellent quality
+                    audioBitsPerSecond: 256000     // 256 kbps for audio
                 }};
                 
                 // Fallback for Safari/iOS
                 if (!MediaRecorder.isTypeSupported(options.mimeType)) {{
                     options.mimeType = 'video/webm;codecs=vp8,opus';
+                    options.videoBitsPerSecond = 5000000;
                     if (!MediaRecorder.isTypeSupported(options.mimeType)) {{
                         options.mimeType = 'video/webm';
+                        options.videoBitsPerSecond = 5000000;
                     }}
                 }}
                 
@@ -881,18 +903,24 @@ def main():
                     recordedChunks = [];
                 }};
                 
-                mediaRecorder.start(1000); // Collect data every second
+                mediaRecorder.start(100); // Collect data every 100ms for smoother recording
                 isRecording = true;
                 
-                document.getElementById('recordBtn').textContent = '⏹️ Stop Recording';
-                document.getElementById('recordBtn').style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                const btn = document.getElementById('recordBtn');
+                btn.innerHTML = '<span>⏹️</span><span>Stop Recording</span>';
+                btn.classList.add('recording');
                 
-                // Draw both videos onto canvas
+                // Draw both videos onto canvas with high quality
                 const drawVideos = () => {{
                     if (!isRecording) return;
                     
+                    // Black background
                     ctx.fillStyle = '#000';
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Enable high-quality image rendering
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
                     
                     // Draw remote video (customer) - larger
                     if (remoteVideo.srcObject && remoteVideo.readyState >= 2) {{
@@ -917,38 +945,63 @@ def main():
                     
                     // Draw local video (agent) - smaller, picture-in-picture
                     if (localStream && localVideo.readyState >= 2) {{
-                        const pipWidth = 240;
-                        const pipHeight = 180;
-                        const pipX = canvas.width - pipWidth - 20;
-                        const pipY = canvas.height - pipHeight - 20;
+                        const pipWidth = 384;   // Larger PiP for better quality
+                        const pipHeight = 288;
+                        const pipX = canvas.width - pipWidth - 30;
+                        const pipY = canvas.height - pipHeight - 30;
                         
-                        // Draw border
-                        ctx.strokeStyle = '#fff';
-                        ctx.lineWidth = 3;
-                        ctx.strokeRect(pipX - 2, pipY - 2, pipWidth + 4, pipHeight + 4);
+                        // Draw shadow
+                        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                        ctx.shadowBlur = 20;
+                        ctx.shadowOffsetX = 0;
+                        ctx.shadowOffsetY = 5;
                         
+                        // Draw border with shadow
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(pipX - 4, pipY - 4, pipWidth + 8, pipHeight + 8);
+                        
+                        // Reset shadow
+                        ctx.shadowColor = 'transparent';
+                        ctx.shadowBlur = 0;
+                        
+                        // Draw video
                         ctx.drawImage(localVideo, pipX, pipY, pipWidth, pipHeight);
                     }}
                     
-                    // Add recording indicator
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+                    // Add professional recording indicator
+                    const indicatorSize = 20;
+                    const indicatorX = 40;
+                    const indicatorY = 40;
+                    
+                    // Pulsing red circle
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
                     ctx.beginPath();
-                    ctx.arc(30, 30, 12, 0, 2 * Math.PI);
+                    ctx.arc(indicatorX, indicatorY, indicatorSize * (0.8 + Math.sin(Date.now() / 500) * 0.2), 0, 2 * Math.PI);
                     ctx.fill();
                     
+                    // REC text
                     ctx.fillStyle = '#fff';
-                    ctx.font = 'bold 16px Arial';
-                    ctx.fillText('REC', 50, 38);
+                    ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                    ctx.fillText('REC', indicatorX + indicatorSize + 15, indicatorY + 8);
                     
-                    // Add timestamp
-                    const timestamp = new Date().toLocaleTimeString();
-                    ctx.fillText(timestamp, canvas.width - 120, 38);
+                    // Add timestamp with better styling
+                    const timestamp = new Date().toLocaleTimeString('en-US', {{ hour12: false }});
+                    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+                    const timeWidth = ctx.measureText(timestamp).width;
+                    
+                    // Background for timestamp
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    ctx.fillRect(canvas.width - timeWidth - 60, 20, timeWidth + 40, 40);
+                    
+                    // Timestamp text
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(timestamp, canvas.width - timeWidth - 40, 48);
                     
                     requestAnimationFrame(drawVideos);
                 }};
                 
                 drawVideos();
-                console.log('Recording started');
+                console.log('Recording started at Full HD quality');
                 
             }} catch (err) {{
                 console.error('Error starting recording:', err);
@@ -962,8 +1015,9 @@ def main():
                 mediaRecorder.stop();
                 isRecording = false;
                 
-                document.getElementById('recordBtn').textContent = '⏺️ Start Recording';
-                document.getElementById('recordBtn').style.background = 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)';
+                const btn = document.getElementById('recordBtn');
+                btn.innerHTML = '<span>⏺️</span><span>Start Recording</span>';
+                btn.classList.remove('recording');
                 
                 console.log('Recording stopped');
             }}
