@@ -110,22 +110,30 @@ def main():
             padding: 0;
             box-sizing: border-box;
         }}
+        html, body {{
+            height: 100%;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             min-height: 100vh;
-            padding: 15px;
-            padding-bottom: 20px;
+            padding: 10px;
+            padding-bottom: 40px;
             overflow-x: hidden;
+            overflow-y: auto;
         }}
         .video-container {{
             position: relative;
             width: 100%;
-            height: 75vh;
+            height: 40vh;
+            max-height: 400px;
             background: #000;
             border-radius: 15px;
             overflow: hidden;
             box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            margin-bottom: 15px;
         }}
         #remoteVideo {{
             width: 100%;
@@ -199,11 +207,12 @@ def main():
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 12px;
-            margin-top: 20px;
+            margin-top: 15px;
             max-width: 1200px;
             margin-left: auto;
             margin-right: auto;
             padding: 0 10px;
+            padding-bottom: 30px;
         }}
         .btn {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -262,10 +271,10 @@ def main():
         #connectionStatus {{
             text-align: center;
             color: white;
-            margin-bottom: 15px;
-            font-size: 14px;
+            margin-bottom: 10px;
+            font-size: 13px;
             font-weight: 500;
-            padding: 10px;
+            padding: 8px;
             background: rgba(0,0,0,0.3);
             border-radius: 10px;
         }}
@@ -310,32 +319,66 @@ def main():
             display: block;
         }}
         @media (max-width: 768px) {{
-            .controls {{
-                grid-template-columns: repeat(2, 1fr);
-                gap: 10px;
-            }}
-            .btn {{
-                padding: 14px 16px;
-                font-size: 14px;
-                min-height: 52px;
-            }}
-            #localVideo {{
-                width: 120px;
-                height: 90px;
-                bottom: 10px;
-                right: 10px;
+            body {{
+                padding: 8px;
+                padding-bottom: 60px;
             }}
             .video-container {{
-                height: 60vh;
+                height: 35vh;
+                max-height: 300px;
+                margin-bottom: 10px;
+            }}
+            .controls {{
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+                padding-bottom: 20px;
+                margin-top: 10px;
+            }}
+            .btn {{
+                padding: 12px 10px;
+                font-size: 13px;
+                min-height: 48px;
+            }}
+            #localVideo {{
+                width: 100px;
+                height: 75px;
+                bottom: 10px;
+                right: 10px;
+                border: 2px solid #fff;
+            }}
+            #connectionStatus {{
+                font-size: 12px;
+                padding: 6px;
+                margin-bottom: 8px;
             }}
         }}
         @media (max-width: 480px) {{
+            body {{
+                padding: 8px;
+                padding-bottom: 80px;
+            }}
+            .video-container {{
+                height: 30vh;
+                max-height: 250px;
+                margin-bottom: 10px;
+            }}
             .controls {{
                 grid-template-columns: 1fr;
+                gap: 8px;
+                padding-bottom: 20px;
+                margin-top: 8px;
             }}
             .btn {{
-                font-size: 15px;
-                padding: 16px 20px;
+                font-size: 14px;
+                padding: 14px 18px;
+                min-height: 50px;
+            }}
+            #localVideo {{
+                width: 80px;
+                height: 60px;
+                bottom: 8px;
+                right: 8px;
+                border: 2px solid #fff;
             }}
         }}
     </style>
