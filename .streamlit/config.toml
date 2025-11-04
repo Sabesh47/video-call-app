@@ -1,0 +1,9 @@
+[server]
+allowedOrigins = [
+    "https://video-call-app-nuvtfwpjdxrwaupcmt93se.streamlit.app",
+    "https://your-nginx-domain.com",
+    "https://*.streamlit.app"
+]
+
+enableCORS = true
+enableXsrfProtection = true
